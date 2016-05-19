@@ -3,10 +3,10 @@ require './yahoo_rest'
 require 'em-websocket'
 EM.run do
   # for now use localhost, this will be changed later
-  EM::WebSocket.run(host: 'localhost', port: 8080) do |ws|
+  EM::WebSocket.run(host: 'cloud-vm-45-139.doc.ic.ac.uk', port: 8080) do |ws|
     ws.onopen do |handshake|
-      puts 'User #{handshake.path} connected!'
-      ws.send "Привет мой друг #{handshake.path}"
+      puts "User #{handshake.path} connected!"
+      ws.send "Welcome #{handshake.path}"
     end
 
     ws.onclose { puts 'User disconnected' }
