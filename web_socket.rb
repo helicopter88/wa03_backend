@@ -1,12 +1,12 @@
 #!/usr/bin/ruby
 require 'socket'
-require './yahoo_rest'
+require_relative 'yahoo_rest'
 require 'em-websocket'
 hostname = Socket.gethostname.strip
 puts "Webserver is being hosted on #{hostname}"
 EM.run do
   # for now use localhost, this will be changed later
-  EM::WebSocket.run(host: hostname, port: 8080) do |ws|
+  EM::WebSocket.run(host: hostname, port:8080) do |ws|
     ws.onopen do |handshake|
       puts "User #{handshake.path} connected!"
       ws.send "Welcome #{handshake.path}"
