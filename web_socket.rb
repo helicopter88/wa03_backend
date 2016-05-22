@@ -6,7 +6,7 @@ hostname = Socket.gethostname.strip
 puts "Webserver is being hosted on #{hostname}"
 EM.run do
   # for now use localhost, this will be changed later
-  EM::WebSocket.run(host: hostname, port:8080) do |ws|
+  EM::WebSocket.run(host: '0.0.0.0', port:8080) do |ws|
     ws.onopen do |handshake|
       puts "User #{handshake.path} connected!"
       ws.send "Welcome #{handshake.path}"
