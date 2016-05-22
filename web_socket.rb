@@ -3,7 +3,9 @@ require 'socket'
 require_relative 'yahoo_rest'
 require 'em-websocket'
 hostname = Socket.gethostname.strip
-puts "Webserver is being hosted on #{hostname}"
+puts "Webserver is being hosted on #{hostname}" 
+yr = YahooRest.new
+
 EM.run do
   # for now use localhost, this will be changed later
   EM::WebSocket.run(host: '0.0.0.0', port:8080) do |ws|
@@ -18,7 +20,6 @@ EM.run do
       msg.strip!
       # We want tokens separated by spaces
       tokens = msg.split
-      yr = YahooRest.new
       # The first one is always going to be the action we want to execute
       case tokens[0]
       when 'ask_price'
