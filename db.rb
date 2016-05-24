@@ -60,7 +60,7 @@ class DatabaseQueries
   end
 
   def get_account_currency(user)
-    q = @conn.exec("SELECT currency FROM users WHERE use_id = '#{user}'")
+    q = @conn.exec("SELECT currency FROM users WHERE user_id = '#{user}'")
     return nil if q.ntuples == 0
     q.getvalue(0, 0).to_s
   end
@@ -90,7 +90,7 @@ class DatabaseQueries
     currency = get_se(instr)
     acc_currency = get_account_currency(user)
     return false unless currency == acc_currency
-    if type == 't'
+       if type == 't'
       insert_instrument(instr, get_name_instr(instr))
       if value <= u_capital
         @conn.exec(
@@ -190,7 +190,7 @@ class DatabaseQueries
   se = @yr.retrieve_se(instr)
   if se.include? "LSE"
     c = "GBP"
-  elsif se.include? "NME" or se.include? "NYQ"
+  elsif se.include? "NMS" or se.include? "NYQ"
     c = "USD"
   end
   return c
