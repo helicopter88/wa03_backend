@@ -47,10 +47,10 @@ class DatabaseQueries
         @conn.exec(
           "start transaction;
       		 UPDATE users SET capital = '#{u_capital - value}' WHERE user_id = '#{user}';
-      		 INSERT INTO trans (user_id, instr_id, price, amount, type, time)
+      		 INSERT INTO trans (user_id, instr_id, price, amount, type, time, currency)
       			 VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}', '#{type}', clock_timestamp(), '#{currency}');
-      		 INSERT INTO owned AS o VALUES ('#{user}', '#{instr}', '#{amount}', '#{currency})
-      		 ON CONFLICT (user_id, instr_id) DO UPDATE SET o.amount = #{curr + amount} WHERE o.user_id = '#{user}' AND o.instr_id = '#{instr}';
+      		 INSERT INTO owned VALUES ('#{user}', '#{instr}', '#{amount}', '#{currency}')
+      		 ON CONFLICT (user_id, instr_id) DO UPDATE SET amount = #{curr + amount};
       		 commit;"
         )
         return true
@@ -140,11 +140,10 @@ class DatabaseQueries
   def get_se(instr)
   yr = YahooRest.new
   se = yr.retrieve_se(instr)
-  case se
-  when "LSE"
-     c = "GBP"
-  when "NME", "NYE"
-     c = "USD"
+  if se.include? "LSE"
+    c = "GBP"
+  elsif se.include? "NME" or se.include? "NYQ"
+    c = "USD"
   end
   return c
   end
