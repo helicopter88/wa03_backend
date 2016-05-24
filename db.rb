@@ -7,42 +7,42 @@ class DatabaseQueries
   end
 
   def parse_tokens(tokens)
-  case tokens[0]
-    # TODO: potentially useless
-    # check_instr symbol name
+    case tokens[0]
+      # TODO: potentially useless
+      # check_instr symbol name
     when 'check_instr'
       return "ci_#{tokens[1]}: #{check_instr tokens[1], tokens[2]}"
-    # login user password
+      # login user password
     when 'login'
       return "l_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
-    # insert_user username password capital
-    # capital is casted to float
+      # insert_user username password capital
+      # capital is casted to float
     when 'insert_user'
       return "iu_#{tokens[1]}: #{insert_user tokens[1], tokens[2], tokens[3].to_f}"
-    # TODO: this table is potentially useless
-    # insert_instr symbol name
+      # TODO: this table is potentially useless
+      # insert_instr symbol name
     when 'insert_instr'
       return "ii_#{tokens[1]}: #{insert_instrument tokens[1], tokens[2]}"
-    # insert_trans user symbol price amount "true for buy | false for sell"
-    # price casted to float, amount to int
+      # insert_trans user symbol price amount "true for buy | false for sell"
+      # price casted to float, amount to int
     when 'insert_trans'
       return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2], tokens[3].to_f, tokens[4].to_i, tokens[5]}"
-    # get_capital user
+      # get_capital user
     when 'get_capital'
       return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
-    # get_buy_trans user
+      # get_buy_trans user
     when 'get_buy_trans'
       return "gb_#{tokens[1]}: #{get_buy_trans tokens[1]}"
-    # update_user_cap user newcapital
-    # newcapital casted to float
+      # update_user_cap user newcapital
+      # newcapital casted to float
     when 'update_user_cap'
       return "uc_#{tokens[1]}: #{update_user_capital tokens[1], tokens[2].to_f}"
-    # get_total_profit user
+      # get_total_profit user
     when 'get_total_profit'
       return "tp_#{tokens[1]}: #{get_total_profit tokens[1]}"
     else
-      return "db: invalid action"
-    end  
+      return 'db: invalid action'
+    end
   end
 
   def check_instr(instr, name)
@@ -90,7 +90,7 @@ class DatabaseQueries
     currency = get_se(instr)
     acc_currency = get_account_currency(user)
     return false unless currency == acc_currency
-       if type == 't'
+    if type == 't'
       insert_instrument(instr, get_name_instr(instr))
       if value <= u_capital
         @conn.exec(
@@ -107,19 +107,19 @@ class DatabaseQueries
       return false
     else
       if curr >= amount
-          @conn.exec(
+        @conn.exec(
           "start transaction;
-      		 INSERT INTO trans (user_id, instr_id, price, amount, type, time)
-      			 VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}', '#{type}', clock_timestamp());
-      		 UPDATE ONLY users SET capital = #{u_capital + value} WHERE user_id = '#{user}';
-      		 UPDATE ONLY owned SET amount = #{curr - amount} WHERE user_id = '#{user}' AND instr_id = '#{instr}';
-      		 DELETE FROM ONLY owned WHERE amount = 0;
-      		commit;"
+     		 INSERT INTO trans (user_id, instr_id, price, amount, type, time)
+     			 VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}', '#{type}', clock_timestamp());
+     		 UPDATE ONLY users SET capital = #{u_capital + value} WHERE user_id = '#{user}';
+     		 UPDATE ONLY owned SET amount = #{curr - amount} WHERE user_id = '#{user}' AND instr_id = '#{instr}';
+     		 DELETE FROM ONLY owned WHERE amount = 0;
+     		commit;"
         )
         return true
       end
-      return false
-   end
+    end
+    false
   end
 
   def get_user_capital(user)
@@ -127,29 +127,29 @@ class DatabaseQueries
   end
 
   def get_total_profit(user)
-  get_user_capital(user) + get_unrealised_pnl(user)
+    get_user_capital(user) + get_unrealised_pnl(user)
   end
 
   def get_unrealised_pnl(user)
-  upnl = 0
-  # To get the upnl, we go over the list of owned instruments and get the yahoo price
-  q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
-  q.each do |row|
-    upnl += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
-  end
-  upnl
+    upnl = 0
+    # To get the upnl, we go over the list of owned instruments and get the yahoo price
+    q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
+    q.each do |row|
+      upnl += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
+    end
+    upnl
   end
 
   def get_sell_price(symbol)
-  return @yr.request_bid(symbol)
+    @yr.request_bid(symbol)
   end
 
   def get_buy_price(symbol)
-  return @yr.request_ask(symbol)
+    @yr.request_ask(symbol)
   end
 
   def get_name_instr(symbol)
-  return @yr.request_name(symbol).strip!
+    @yr.request_name(symbol).strip!
   end
 
   def get_buy_trans(user)
@@ -157,7 +157,7 @@ class DatabaseQueries
     q = @conn.exec("SELECT * FROM trans WHERE user_id = '#{user}' AND type = 't'")
     puts "'USER' 'INSTR' 'AMOUNT' 'PRICE' 'TIME' 'CURRENCY'"
     q.each do |row|
-      puts '%s %s %d %f %s %s' % [row['user_id'], row['instr_id'], row['amount'], row['price'], row['time'], row['currency']]
+      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'], row['amount'], row['price'], row['time'], row['currency']])
     end
   end
 
@@ -166,7 +166,7 @@ class DatabaseQueries
     q = @conn.exec("SELECT * FROM trans WHERE user_id = '#{user}' AND type = 'f'")
     puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
     q.each do |row|
-      puts '%s %s %d %f %s %s' % [row['user_id'], row['instr_id'], row['amount'], row['price'], row['time'], row['currency']]
+      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'], row['amount'], row['price'], row['time'], row['currency']])
     end
   end
 
@@ -174,7 +174,7 @@ class DatabaseQueries
     q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
     puts "'USER' 'INSTR' 'AMOUNT', 'CURRENCY'"
     q.each do |row|
-      puts '%s %s %d %s' % [row['user_id'], row['instr_id'], row['amount'], row['currency']]
+      puts '%s %s %d %s'.format([row['user_id'], row['instr_id'], row['amount'], row['currency']])
     end
   end
 
@@ -187,12 +187,12 @@ class DatabaseQueries
   end
 
   def get_se(instr)
-  se = @yr.retrieve_se(instr)
-  if se.include? "LSE"
-    c = "GBP"
-  elsif se.include? "NMS" or se.include? "NYQ"
-    c = "USD"
-  end
-  return c
+    se = @yr.retrieve_se(instr)
+    if se.include? 'LSE'
+      c = 'GBP'
+    elsif se.include?('NMS') || se.include?('NYQ')
+      c = 'USD'
+    end
+    c
   end
 end

@@ -10,10 +10,9 @@ yr = YahooRest.new
 db = DatabaseQueries.new 'summitdb'
 EM.run do
   # for now use localhost, this will be changed later
-  EM::WebSocket.run(host: '0.0.0.0', port:8080) do |ws|
+  EM::WebSocket.run(host: '0.0.0.0', port: 8080) do |ws|
     ws.onopen do |handshake|
       puts "User #{handshake.path} connected!"
-      ws.send "Welcome #{handshake.path}"
     end
 
     ws.onclose { puts 'User disconnected' }
