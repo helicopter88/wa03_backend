@@ -3,6 +3,23 @@ require 'rest-client'
 require 'json'
 
 class YahooRest
+
+  def parse_tokens(tokens)
+    case tokens[0]
+    # ask_price symbol
+    when 'ask_price'
+      return "ap_#{tokens[1]}: #{yr.request_ask(tokens[1])}"
+    # bid_price symbol
+    when 'bid_price'
+      return "bp_#{tokens[1]}: #{yr.request_bid(tokens[1])}"
+    # exists symbol
+    when 'exists'
+      return "e_#{tokens[1]}: #{yr.check_existance(tokens[1])}"
+    else
+      return "Yahoo: invalid action"
+    end
+  end
+
   # Some basic getters that allow us to easily fetch data from Yahoo finance
   def request_name(symbol)
     response = request(s: symbol, f: 'n')
@@ -19,7 +36,7 @@ class YahooRest
     response = request(s: symbol, f: 'a')
     response
   end
-  
+
   def retrieve_se(symbol)
     response = request(s: symbol, f: 'x')
     response

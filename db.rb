@@ -5,6 +5,44 @@ class DatabaseQueries
     @conn = PG.connect(dbname: dbname)
   end
 
+  def parse_tokens(tokens)
+  case tokens[0]
+    # TODO: potentially useless
+    # check_instr symbol name
+    when 'check_instr'
+      return "ci_#{tokens[1]}: #{db.check_instr tokens[1], tokens[2]}"
+    # login user password
+    when 'login'
+      return "l_#{tokens[1]}: #{db.check_user tokens[1], tokens[2]}"
+    # insert_user username password capital
+    # capital is casted to float
+    when 'insert_user'
+      return "iu_#{tokens[1]}: #{db.insert_user tokens[1], tokens[2], tokens[3].to_f}"
+    # TODO: this table is potentially useless
+    # insert_instr symbol name
+    when 'insert_instr'
+      return "ii_#{tokens[1]}: #{db.insert_instrument tokens[1], tokens[2]}"
+    # insert_trans user symbol price amount "true for buy | false for sell"
+    # price casted to float, amount to int
+    when 'insert_trans'
+      return "it_#{tokens[1]}: #{db.insert_trans tokens[1], tokens[2], tokens[3].to_f, tokens[4].to_i, tokens[5]}"
+    # get_capital user
+    when 'get_capital'
+      return "gc_#{tokens[1]}: #{db.get_user_capital tokens[1]}"
+    # get_buy_trans user
+    when 'get_buy_trans'
+      return "gb_#{tokens[1]}: #{db.get_buy_trans tokens[1]}"
+    # update_user_cap user newcapital
+    # newcapital casted to float
+    when 'update_user_cap'
+      return "uc_#{tokens[1]}: #{db.update_user_capital tokens[1], tokens[2].to_f}"
+    # get_total_profit user
+    when 'get_total_profit'
+      return "tp_#{tokens[1]}: #{db.get_total_profit tokens[1]}"
+    else
+      return "db: invalid action"
+  end
+
   def check_instr(instr, name)
     @conn.exec("SELECT * FROM instruments WHERE instr_id = '#{instr}' AND name = '#{name}'").ntuples == 1
   end
@@ -91,7 +129,7 @@ class DatabaseQueries
     upnl += yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
   end
   upnl
-  end    
+  end
 
   def get_sell_price(symbol)
   yr = YahooRest.new
