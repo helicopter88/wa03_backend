@@ -3,6 +3,7 @@ require_relative 'yahoo_rest'
 class DatabaseQueries
   def initialize(dbname)
     @conn = PG.connect(dbname: dbname)
+    @yr = YahooRest.new
   end
 
   def parse_tokens(tokens)
@@ -10,37 +11,38 @@ class DatabaseQueries
     # TODO: potentially useless
     # check_instr symbol name
     when 'check_instr'
-      return "ci_#{tokens[1]}: #{db.check_instr tokens[1], tokens[2]}"
+      return "ci_#{tokens[1]}: #{check_instr tokens[1], tokens[2]}"
     # login user password
     when 'login'
-      return "l_#{tokens[1]}: #{db.check_user tokens[1], tokens[2]}"
+      return "l_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
     # insert_user username password capital
     # capital is casted to float
     when 'insert_user'
-      return "iu_#{tokens[1]}: #{db.insert_user tokens[1], tokens[2], tokens[3].to_f}"
+      return "iu_#{tokens[1]}: #{insert_user tokens[1], tokens[2], tokens[3].to_f}"
     # TODO: this table is potentially useless
     # insert_instr symbol name
     when 'insert_instr'
-      return "ii_#{tokens[1]}: #{db.insert_instrument tokens[1], tokens[2]}"
+      return "ii_#{tokens[1]}: #{insert_instrument tokens[1], tokens[2]}"
     # insert_trans user symbol price amount "true for buy | false for sell"
     # price casted to float, amount to int
     when 'insert_trans'
-      return "it_#{tokens[1]}: #{db.insert_trans tokens[1], tokens[2], tokens[3].to_f, tokens[4].to_i, tokens[5]}"
+      return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2], tokens[3].to_f, tokens[4].to_i, tokens[5]}"
     # get_capital user
     when 'get_capital'
-      return "gc_#{tokens[1]}: #{db.get_user_capital tokens[1]}"
+      return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
     # get_buy_trans user
     when 'get_buy_trans'
-      return "gb_#{tokens[1]}: #{db.get_buy_trans tokens[1]}"
+      return "gb_#{tokens[1]}: #{get_buy_trans tokens[1]}"
     # update_user_cap user newcapital
     # newcapital casted to float
     when 'update_user_cap'
-      return "uc_#{tokens[1]}: #{db.update_user_capital tokens[1], tokens[2].to_f}"
+      return "uc_#{tokens[1]}: #{update_user_capital tokens[1], tokens[2].to_f}"
     # get_total_profit user
     when 'get_total_profit'
-      return "tp_#{tokens[1]}: #{db.get_total_profit tokens[1]}"
+      return "tp_#{tokens[1]}: #{get_total_profit tokens[1]}"
     else
       return "db: invalid action"
+    end  
   end
 
   def check_instr(instr, name)
@@ -57,8 +59,14 @@ class DatabaseQueries
     @conn.exec("SELECT * FROM users WHERE user_id = '#{user}' AND pword = '#{psw}'").ntuples == 1
   end
 
-  def insert_user(user, psw, capital)
-    @conn.exec("INSERT INTO users VALUES('#{user}', '#{psw}', '#{capital}', '#{capital}')") unless check_user(user, psw)
+  def get_account_currency(user)
+    q = @conn.exec("SELECT currency FROM users WHERE use_id = '#{user}'")
+    return nil if q.ntuples == 0
+    q.getvalue(0, 0).to_s
+  end
+
+  def insert_user(user, psw, capital, currency)
+    @conn.exec("INSERT INTO users VALUES('#{user}', '#{psw}', '#{capital}', '#{capital}', '#{currency}')") unless check_user(user, psw)
   end
 
   def insert_instrument(instr, name)
@@ -80,11 +88,14 @@ class DatabaseQueries
     value = price * amount
     curr = current_amount(user, instr)
     currency = get_se(instr)
+    acc_currency = get_account_currency(user)
+    return false unless currency == acc_currency
     if type == 't'
+      insert_instrument(instr, get_name_instr(instr))
       if value <= u_capital
         @conn.exec(
           "start transaction;
-      		 UPDATE users SET capital = '#{u_capital - value}' WHERE user_id = '#{user}';
+      		 UPDATE users SET capital = #{u_capital - value} WHERE user_id = '#{user}';
       		 INSERT INTO trans (user_id, instr_id, price, amount, type, time, currency)
       			 VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}', '#{type}', clock_timestamp(), '#{currency}');
       		 INSERT INTO owned VALUES ('#{user}', '#{instr}', '#{amount}', '#{currency}')
@@ -115,7 +126,6 @@ class DatabaseQueries
     @conn.exec("SELECT capital FROM users WHERE user_id = '#{user}'").getvalue(0, 0).to_i
   end
 
-  # TODO: total profit = current capital + any unrealised pnl (for all owned instr, mult amount by current price)
   def get_total_profit(user)
   get_user_capital(user) + get_unrealised_pnl(user)
   end
@@ -123,22 +133,23 @@ class DatabaseQueries
   def get_unrealised_pnl(user)
   upnl = 0
   # To get the upnl, we go over the list of owned instruments and get the yahoo price
-  yr = YahooRest.new
   q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
   q.each do |row|
-    upnl += yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
+    upnl += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
   end
   upnl
   end
 
   def get_sell_price(symbol)
-  yr = YahooRest.new
-  return yr.request_bid(symbol)
+  return @yr.request_bid(symbol)
   end
 
   def get_buy_price(symbol)
-  yr = YahooRest.new
-  return yr.request_ask(symbol)
+  return @yr.request_ask(symbol)
+  end
+
+  def get_name_instr(symbol)
+  return @yr.request_name(symbol).strip!
   end
 
   def get_buy_trans(user)
@@ -176,8 +187,7 @@ class DatabaseQueries
   end
 
   def get_se(instr)
-  yr = YahooRest.new
-  se = yr.retrieve_se(instr)
+  se = @yr.retrieve_se(instr)
   if se.include? "LSE"
     c = "GBP"
   elsif se.include? "NME" or se.include? "NYQ"
@@ -185,5 +195,4 @@ class DatabaseQueries
   end
   return c
   end
-
 end
