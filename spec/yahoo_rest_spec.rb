@@ -10,3 +10,13 @@ RSpec.describe YahooRest, '#response' do
     end
   end
 end
+
+RSpec.describe YahooRest, '#response'do
+  context "When giving a non existing symbol" do
+    it "should report N/A when asking for the ask price" do
+      yr = YahooRest.new
+      response = yr.request_ask('ASHKJDH')
+      expect(response.strip!).to eq 'N/A'
+    end
+  end
+end
