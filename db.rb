@@ -178,13 +178,25 @@ class DatabaseQueries
   def get_user_capital(user)
     q = @conn.exec("SELECT capital FROM users WHERE user_id = '#{user}'")
     return 0 if q.ntuples == 0
-    q.getvalue(0, 0).to_i
+    q.getvalue(0, 0).to_f
   end
 
   # Calculate the total profit by adding up
   # the user capital and the unrealised pnl
-  def get_total_profit(user)
+  def get_total(user)
     get_user_capital(user) + get_unrealised_pnl(user)
+  end
+
+  # Gets the initial capital of the user
+  def get_initial_capital(user)
+    q = @conn.exec("SELECT initial FROM users WHERE user_id = '#{user}'")
+    return 0 if q.ntuples == 0
+    q.getvalue(0, 0).to_f
+  end
+
+  # Calculates the profit by deducting the inital investment from the total
+  def get_profit(user)
+    get_total(user) - get_initial_capital(user)  
   end
 
   # Returns the unrealised pnl of the given user 
@@ -211,7 +223,7 @@ class DatabaseQueries
 
   # Get the official name of the instrument from the Yahoo API
   def get_name_instr(symbol)
-    (@yr.request_name(symbol).strip!)[1..-1]
+    @yr.request_name(symbol).strip![1..-2].to_s
   end
 
   # Currently prints all the buys of a given user
@@ -273,4 +285,55 @@ class DatabaseQueries
     end
     c
   end
+  
+  def user_data()
+    q = @conn.exec("SELECT * FROM users")
+    puts "No registered users" if q.ntuples == 0
+    user_data = Array.new
+    q.each do |row|
+      user = row['user_id']
+      upnl = get_unrealised_pnl(user)
+      profit = get_profit(user)
+      total = get_total(user)
+      user_data.push({ :user => user, :upnl => upnl,
+	                :profit => profit, :total => total})
+    end
+    user_data  
+  end
+
+  def upnl_leaderboard()
+    user_data = user_data()
+    user_data.sort_by { |h| h[:upnl] }.reverse! 
+  end
+
+  def profit_leaderboard()
+    user_data = user_data()
+    user_data.sort_by { |h| h[:profit] }.reverse! 
+  end
+
+  def total_leaderboard()
+    user_data = user_data()
+    user_data.sort_by { |h| h[:total] }.reverse!
+  end
+
+  def print_leaderboard(type)
+  type.downcase!
+  if type == 'total'
+    l = total_leaderboard
+  elsif type == 'profit'
+    l = profit_leaderboard
+  elsif type == 'upnl'
+    l = upnl_leaderboard
+  else
+    puts "The type can be 'total', 'profit' or 'upnl'"
+  end
+  puts " User  |  Profit  |  upnl  |  Total "
+  l.each do |row|
+    puts "#{row[:user]} | #{row[:profit].round(3)} | "\
+	 "#{row[:upnl].round(3)} | #{row[:total].round(3)}"
+  end
+  nil
+  end
+
+  private :update_user_capital, :clean_transactions 
 end
