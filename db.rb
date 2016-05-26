@@ -45,9 +45,11 @@ class DatabaseQueries
     when 'get_profit'
       return "tp_#{tokens[1]}: #{get_profit tokens[1]}"
     when 'get_upnl'
-      return "pl_#{tokens[1]}: #{get_urealised_pnl tokens[1]}"
+      return "pl_#{tokens[1]}: #{get_unrealised_pnl tokens[1]}"
     when 'get_currency'
       return "cr_#{tokens[1]}: #{get_account_currency tokens[1]}"
+    when 'get_name'
+      return "nm_#{tokens[1]}: #{get_name tokens[1]}"
     else
       return 'db: invalid action'
     end
@@ -79,6 +81,15 @@ class DatabaseQueries
 		  AND pword = '#{psw}'").ntuples == 1
   end
 
+  # Get the name of the given user
+  def get_name(user)
+    q = @conn.exec("SELECT *
+		FROM users
+		WHERE user_id = '#{user}'")
+    return "" unless q.ntuples == 1
+    q.getvalue(0,5).to_s
+  end
+
   def get_account_currency(user)
     q = @conn.exec("SELECT currency FROM users WHERE user_id = '#{user}'")
     return nil if q.ntuples == 0
@@ -95,11 +106,11 @@ class DatabaseQueries
   end
 
   # Inserts a user into the database if we don't already have their record otherwise returns false
-  def insert_user(user, psw, capital, currency)
+  def insert_user(user, psw, name, capital, currency)
     if !check_user(user, psw)
       @conn.exec("INSERT INTO users 
 		VALUES('#{user}', '#{psw}', '#{capital}',
-		 '#{capital}', '#{currency}')")
+		 '#{capital}', '#{currency}', '#{name}')")
       return true
     end
     false
@@ -182,25 +193,25 @@ class DatabaseQueries
   def get_user_capital(user)
     q = @conn.exec("SELECT capital FROM users WHERE user_id = '#{user}'")
     return 0 if q.ntuples == 0
-    q.getvalue(0, 0).to_f
+    '%.3f' % q.getvalue(0, 0).to_f
   end
 
   # Calculate the total profit by adding up
   # the user capital and the unrealised pnl
   def get_total(user)
-    get_user_capital(user) + get_unrealised_pnl(user)
+    get_user_capital(user).to_f + get_unrealised_pnl(user).to_f
   end
 
   # Gets the initial capital of the user
   def get_initial_capital(user)
     q = @conn.exec("SELECT initial FROM users WHERE user_id = '#{user}'")
     return 0 if q.ntuples == 0
-    q.getvalue(0, 0).to_f
+    '%.3f' % q.getvalue(0, 0).to_f
   end
 
   # Calculates the profit by deducting the inital investment from the total
   def get_profit(user)
-    get_total(user) - get_initial_capital(user)  
+    get_total(user).to_f - get_initial_capital(user).to_f
   end
 
   # Returns the unrealised pnl of the given user 
@@ -212,7 +223,7 @@ class DatabaseQueries
     q.each do |row|
       upnl += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
     end
-    upnl
+    '%.3f' % upnl
   end
 
   # Return the sell/bid price from the Yahoo API
@@ -238,7 +249,7 @@ class DatabaseQueries
 		   WHERE user_id = '#{user}'
 		     AND type = 't'")
    
-   #buy_arr = Array.new
+   buy_arr = Array.new
    puts "'USER' 'INSTR' 'AMOUNT' 'PRICE' 'TIME' 'CURRENCY'"
    q.each do |row|
     # buy_arr.push({:user => row['user_id']
@@ -298,11 +309,12 @@ class DatabaseQueries
     puts "No registered users" if q.ntuples == 0
     user_data = Array.new
     q.each do |row|
+      name = row['name']
       user = row['user_id']
       upnl = get_unrealised_pnl(user)
       profit = get_profit(user)
       total = get_total(user)
-      user_data.push({ :user => user, :upnl => upnl,
+      user_data.push({ :user => name, :upnl => upnl,
 	                :profit => profit, :total => total})
     end
     user_data  
