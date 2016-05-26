@@ -199,7 +199,7 @@ class DatabaseQueries
   # Calculate the total profit by adding up
   # the user capital and the unrealised pnl
   def get_total(user)
-    get_user_capital(user).to_f + get_unrealised_pnl(user).to_f
+    '%.3f' % (get_user_capital(user).to_f + get_unrealised_pnl(user).to_f)
   end
 
   # Gets the initial capital of the user
@@ -211,7 +211,7 @@ class DatabaseQueries
 
   # Calculates the profit by deducting the inital investment from the total
   def get_profit(user)
-    get_total(user).to_f - get_initial_capital(user).to_f
+    '%.3f' % (get_total(user).to_f - get_initial_capital(user).to_f)
   end
 
   # Returns the unrealised pnl of the given user 
