@@ -10,51 +10,51 @@ class DatabaseQueries
     case tokens[0]
       # TODO: potentially useless
       # check_instr symbol name
-    when 'check_instr'
-      return "ci_#{tokens[1]}: #{check_instr tokens[1], tokens[2]}"
+      when 'check_instr'
+        return "ci_#{tokens[1]}: #{check_instr tokens[1], tokens[2]}"
       # login user password
-    when 'login'
-      return "lg_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
+      when 'login'
+        return "lg_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
       # insert_user username password capital
       # capital is casted to float
-    when 'insert_user'
-      return "iu_#{tokens[1]}: #{insert_user tokens[1], 
-				tokens[2], tokens[3].to_f}"
+      when 'insert_user'
+        return "iu_#{tokens[1]}: #{insert_user tokens[1],
+                                               tokens[2], tokens[3].to_f}"
       # TODO: this table is potentially useless
       # insert_instr symbol name
-    when 'insert_instr'
-      return "ii_#{tokens[1]}: #{insert_instrument tokens[1], tokens[2]}"
+      when 'insert_instr'
+        return "ii_#{tokens[1]}: #{insert_instrument tokens[1], tokens[2]}"
       # insert_trans user symbol price amount "true for buy | false for sell"
       # price casted to float, amount to int
-    when 'insert_trans'
-      return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2], 
-				tokens[3].to_f, tokens[4].to_i, tokens[5]}"
+      when 'insert_trans'
+        return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2],
+                                                tokens[3].to_f, tokens[4].to_i, tokens[5]}"
       # get_capital user
-    when 'get_capital'
-      return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
+      when 'get_capital'
+        return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
       # get_buy_trans user
-    when 'get_buy_trans'
-      return "gb_#{tokens[1]}: #{get_buy_trans tokens[1]}"
+      when 'get_buy_trans'
+        return "gb_#{tokens[1]}: #{get_buy_trans tokens[1]}"
       # update_user_cap user newcapital
       # newcapital casted to float
-    when 'update_user_cap'
-      return "uc_#{tokens[1]}: #{update_user_capital tokens[1], tokens[2].to_f}"
+      when 'update_user_cap'
+        return "uc_#{tokens[1]}: #{update_user_capital tokens[1], tokens[2].to_f}"
       # get_total user
-    when 'get_total'
-      return "tt_#{tokens[1]}: #{get_total tokens[1]}"
-    when 'get_profit'
-      return "tp_#{tokens[1]}: #{get_profit tokens[1]}"
-    when 'get_upnl'
-      return "pl_#{tokens[1]}: #{get_unrealised_pnl tokens[1]}"
-    when 'get_currency'
-      return "cr_#{tokens[1]}: #{get_account_currency tokens[1]}"
-    when 'get_name'
-      return "nm_#{tokens[1]}: #{get_name tokens[1]}"
-    else
-      return 'db: invalid action'
+      when 'get_total'
+        return "tt_#{tokens[1]}: #{get_total tokens[1]}"
+      when 'get_profit'
+        return "tp_#{tokens[1]}: #{get_profit tokens[1]}"
+      when 'get_upnl'
+        return "pl_#{tokens[1]}: #{get_unrealised_pnl tokens[1]}"
+      when 'get_currency'
+        return "cr_#{tokens[1]}: #{get_account_currency tokens[1]}"
+      when 'get_name'
+        return "nm_#{tokens[1]}: #{get_name tokens[1]}"
+      else
+        return 'db: invalid action'
     end
   end
-  
+
   # Check whether the instrument exists in the instrument table
   def check_instr(instr, name)
     @conn.exec("SELECT * 
@@ -87,7 +87,7 @@ class DatabaseQueries
 		FROM users
 		WHERE user_id = '#{user}'")
     return "" unless q.ntuples == 1
-    q.getvalue(0,5).to_s
+    q.getvalue(0, 5).to_s
   end
 
   def get_account_currency(user)
@@ -95,7 +95,7 @@ class DatabaseQueries
     return nil if q.ntuples == 0
     q.getvalue(0, 0).to_s
   end
-  
+
   # Deletes an user from the users database, if it exists, otherwise returns false
   def delete_user(user, psw)
     if check_user(user, psw)
@@ -107,7 +107,7 @@ class DatabaseQueries
 
   # Inserts a user into the database if we don't already have their record otherwise returns false
   def insert_user(user, psw, name, capital, currency)
-    if !check_user(user, psw)
+    unless check_user(user, psw)
       @conn.exec("INSERT INTO users 
 		VALUES('#{user}', '#{psw}', '#{capital}',
 		 '#{capital}', '#{currency}', '#{name}')")
@@ -124,15 +124,15 @@ class DatabaseQueries
     end
     false
   end
-  
+
   # Inserts an instrument into the database if we don't already have its record
   def insert_instrument(instr, name)
-    if !check_instr(instr, name)
+    unless check_instr(instr, name)
       @conn.exec("INSERT INTO instruments 
 		VALUES('#{instr}', '#{name}')")
       return true
     end
-    return false
+    false
   end
 
   # Returns the number of shares currently owned (for a given instrument)
@@ -158,33 +158,33 @@ class DatabaseQueries
     return false unless currency == acc_currency
     if type == 't' && value <= u_capital
       insert_instrument(instr, get_name_instr(instr))
-        @conn.transaction do |con|
-          con.exec "UPDATE users 
+      @conn.transaction do |con|
+        con.exec "UPDATE users
 		      SET capital = #{u_capital - value} 
 		      WHERE user_id = '#{user}'"
-	  con.exec "INSERT INTO trans
+        con.exec "INSERT INTO trans
 		      (user_id, instr_id, price, amount, type, time, currency)
       		      VALUES ('#{user}', '#{instr}','#{price}','#{amount}',
 		      '#{type}', clock_timestamp(), '#{currency}')"
-	  con.exec "INSERT INTO owned VALUES 
+        con.exec "INSERT INTO owned VALUES
 		      ('#{user}', '#{instr}', '#{amount}', '#{currency}')
       		      ON CONFLICT (user_id, instr_id)
 		      DO UPDATE SET amount = #{curr + amount}"
-        end
-        return true
-    elsif type == 'f' && curr >= amount && 
+      end
+      return true
+    elsif type == 'f' && curr >= amount &&
         @conn.transaction do |con|
           con.exec "INSERT INTO trans
 		      (user_id, instr_id, price, amount, type, time)
      		      VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}',
 		      '#{type}', clock_timestamp(), '#{currency}')"
-     	  con.exec "UPDATE ONLY users SET capital = #{u_capital + value}
+          con.exec "UPDATE ONLY users SET capital = #{u_capital + value}
 		      WHERE user_id = '#{user}'"
           con.exec "UPDATE ONLY owned SET amount = #{curr - amount}
 		      WHERE user_id = '#{user}' AND instr_id = '#{instr}'"
           con.exec "DELETE FROM ONLY owned WHERE amount = 0"
         end
-        return true
+      return true
     end
     false
   end
@@ -244,32 +244,32 @@ class DatabaseQueries
   # Currently prints all the buys of a given user
   #TODO: make an array and return as JSON file
   def get_buy_trans(user)
-   q = @conn.exec("SELECT * 
+    q = @conn.exec("SELECT *
 		   FROM trans 
 		   WHERE user_id = '#{user}'
 		     AND type = 't'")
-   
-   buy_arr = Array.new
-   puts "'USER' 'INSTR' 'AMOUNT' 'PRICE' 'TIME' 'CURRENCY'"
-   q.each do |row|
-    # buy_arr.push({:user => row['user_id']
-     puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
-		 row['amount'], row['price'], row['time'], row['currency']])
-   end
+
+    buy_arr = Array.new
+    puts "'USER' 'INSTR' 'AMOUNT' 'PRICE' 'TIME' 'CURRENCY'"
+    q.each do |row|
+      # buy_arr.push({:user => row['user_id']
+      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
+                                       row['amount'], row['price'], row['time'], row['currency']])
+    end
   end
 
   # Currently prints all the sells of a given user
   #TODO: make an array and return as JSON file
   def get_sell_trans(user)
-   q = @conn.exec("SELECT * 
+    q = @conn.exec("SELECT *
 		   FROM trans 
 		   WHERE user_id = '#{user}'
 		     AND type = 'f'")
-   puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
-   q.each do |row|
-     puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
-		 row['amount'], row['price'], row['time'], row['currency']])
-   end
+    puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
+    q.each do |row|
+      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
+                                       row['amount'], row['price'], row['time'], row['currency']])
+    end
   end
 
   # Prints the current open positions of the given user
@@ -277,8 +277,8 @@ class DatabaseQueries
     q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
     puts "'USER' 'INSTR' 'AMOUNT', 'CURRENCY'"
     q.each do |row|
-      puts '%s %s %d %s'.format([row['user_id'], row['instr_id'], 
-			row['amount'], row['currency']])
+      puts '%s %s %d %s'.format([row['user_id'], row['instr_id'],
+                                 row['amount'], row['currency']])
     end
   end
 
@@ -295,18 +295,18 @@ class DatabaseQueries
   # Gets the currency of the given instrument by checking its stock exchange
   # Currently only supports London Stock Exchange, NASDAQ SE and New York SE
   def get_se(instr)
+    #default is GBP
+    c = 'GBP'
     se = @yr.retrieve_se(instr)
-    if se.include? 'LSE'
-      c = 'GBP'
-    elsif se.include?('NMS') || se.include?('NYQ')
+    if se.include?('NMS') || se.include?('NYQ')
       c = 'USD'
     end
     c
   end
-  
-  def user_data()
-    q = @conn.exec("SELECT * FROM users")
-    puts "No registered users" if q.ntuples == 0
+
+  def user_data
+    q = @conn.exec('SELECT * FROM users')
+    puts 'No registered users' if q.ntuples == 0
     user_data = Array.new
     q.each do |row|
       name = row['name']
@@ -314,45 +314,45 @@ class DatabaseQueries
       upnl = get_unrealised_pnl(user)
       profit = get_profit(user)
       total = get_total(user)
-      user_data.push({ :user => name, :upnl => upnl,
-	                :profit => profit, :total => total})
+      user_data.push({:user => name, :upnl => upnl,
+                      :profit => profit, :total => total})
     end
-    user_data  
+    user_data
   end
 
-  def upnl_leaderboard()
-    user_data = user_data()
-    user_data.sort_by { |h| h[:upnl] }.reverse! 
+  def upnl_leaderboard
+    udata = user_data
+    udata.sort_by { |h| h[:upnl] }.reverse!
   end
 
-  def profit_leaderboard()
-    user_data = user_data()
-    user_data.sort_by { |h| h[:profit] }.reverse! 
+  def profit_leaderboard
+    udata = user_data
+    udata.sort_by { |h| h[:profit] }.reverse!
   end
 
-  def total_leaderboard()
-    user_data = user_data()
-    user_data.sort_by { |h| h[:total] }.reverse!
+  def total_leaderboard
+    udata = user_data
+    udata.sort_by { |h| h[:total] }.reverse!
   end
 
   def print_leaderboard(type)
-  type.downcase!
-  if type == 'total'
-    l = total_leaderboard
-  elsif type == 'profit'
-    l = profit_leaderboard
-  elsif type == 'upnl'
-    l = upnl_leaderboard
-  else
-    puts "The type can be 'total', 'profit' or 'upnl'"
-  end
-  puts " User  |  Profit  |  upnl  |  Total "
-  l.each do |row|
-    puts "#{row[:user]} | #{row[:profit].round(3)} | "\
-	 "#{row[:upnl].round(3)} | #{row[:total].round(3)}"
-  end
-  nil
+    type.downcase!
+    if type == 'total'
+      l = total_leaderboard
+    elsif type == 'profit'
+      l = profit_leaderboard
+    elsif type == 'upnl'
+      l = upnl_leaderboard
+    else
+      puts "The type can be 'total', 'profit' or 'upnl'"
+    end
+    puts " User  |  Profit  |  upnl  |  Total "
+    l.each do |row|
+      puts "#{row[:user]} | #{row[:profit].round(3)} | " \
+	  "#{row[:upnl].round(3)} | #{row[:total].round(3)}"
+    end
+    nil
   end
 
-  private :update_user_capital, :clean_transactions 
+  private :update_user_capital, :clean_transactions
 end
