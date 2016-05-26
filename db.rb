@@ -307,7 +307,9 @@ class DatabaseQueries
   def user_data
     q = @conn.exec('SELECT * FROM users')
     puts 'No registered users' if q.ntuples == 0
-    return @user_data if defined? @user_data && Time.new.to_i - @leader_time > 600
+    # Check if we cached something, if we did, 
+    # and it's not older than 10m it is good enough
+    return @user_data unless @user_data.nil? || Time.new.to_i - @leader_time > 600
     user_data = Array.new
     q.each do |row|
       name = row['name']
