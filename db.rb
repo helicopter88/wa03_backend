@@ -9,17 +9,17 @@ class DatabaseQueries
   def parse_tokens(tokens)
     case tokens[0]
       # TODO: potentially useless
-      # check_instr symbol name
+      # check_instr symbol
       when 'check_instr'
-        return "ci_#{tokens[1]}: #{check_instr tokens[1], tokens[2]}"
+        return "ci_#{tokens[1]}: #{check_instr tokens[1]}"
       # login user password
       when 'login'
         return "lg_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
-      # insert_user username password capital
+      # insert_user username password name capital currency
       # capital is casted to float
       when 'insert_user'
         return "iu_#{tokens[1]}: #{insert_user tokens[1],
-                                               tokens[2], tokens[3].to_f}"
+                                               tokens[2], tokens[3], tokens[4].to_f, tokens[5]}"
       # TODO: this table is potentially useless
       # insert_instr symbol name
       when 'insert_instr'
@@ -56,7 +56,7 @@ class DatabaseQueries
   end
 
   # Check whether the instrument exists in the instrument table
-  def check_instr(instr, name)
+  def check_instr(instr)
     @conn.exec("SELECT * 
 		FROM instruments 
 		WHERE instr_id = '#{instr}'").ntuples == 1
@@ -307,6 +307,7 @@ class DatabaseQueries
   def user_data
     q = @conn.exec('SELECT * FROM users')
     puts 'No registered users' if q.ntuples == 0
+    return @user_data if defined? @user_data && Time.new.to_i - @leader_time > 600
     user_data = Array.new
     q.each do |row|
       name = row['name']
@@ -317,6 +318,8 @@ class DatabaseQueries
       user_data.push({:user => name, :upnl => upnl,
                       :profit => profit, :total => total})
     end
+    @user_data = user_data
+    @leader_time = Time.new.to_i
     user_data
   end
 
