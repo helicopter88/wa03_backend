@@ -14,7 +14,7 @@ class DatabaseQueries
       return "ci_#{tokens[1]}: #{check_instr tokens[1], tokens[2]}"
       # login user password
     when 'login'
-      return "l_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
+      return "lg_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
       # insert_user username password capital
       # capital is casted to float
     when 'insert_user'
@@ -39,11 +39,15 @@ class DatabaseQueries
       # newcapital casted to float
     when 'update_user_cap'
       return "uc_#{tokens[1]}: #{update_user_capital tokens[1], tokens[2].to_f}"
-      # get_total_profit user
-    when 'get_total_profit'
-      return "tp_#{tokens[1]}: #{get_total_profit tokens[1]}"
+      # get_total user
+    when 'get_total'
+      return "tt_#{tokens[1]}: #{get_total tokens[1]}"
+    when 'get_profit'
+      return "tp_#{tokens[1]}: #{get_profit tokens[1]}"
+    when 'get_upnl'
+      return "pl_#{tokens[1]}: #{get_urealised_pnl tokens[1]}"
     when 'get_currency'
-      return "curr_#{tokens[1]}: #{get_account_currency tokens[1]}"
+      return "cr_#{tokens[1]}: #{get_account_currency tokens[1]}"
     else
       return 'db: invalid action'
     end
@@ -80,7 +84,7 @@ class DatabaseQueries
     return nil if q.ntuples == 0
     q.getvalue(0, 0).to_s
   end
-
+  
   # Deletes an user from the users database, if it exists, otherwise returns false
   def delete_user(user, psw)
     if check_user(user, psw)
@@ -233,8 +237,11 @@ class DatabaseQueries
 		   FROM trans 
 		   WHERE user_id = '#{user}'
 		     AND type = 't'")
+   
+   #buy_arr = Array.new
    puts "'USER' 'INSTR' 'AMOUNT' 'PRICE' 'TIME' 'CURRENCY'"
    q.each do |row|
+    # buy_arr.push({:user => row['user_id']
      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
 		 row['amount'], row['price'], row['time'], row['currency']])
    end
