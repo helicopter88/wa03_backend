@@ -26,7 +26,7 @@ end
 RSpec.describe DatabaseQueries, '#response' do
 	context 'Given username,password, capital, concurrency' do
 		it 'should return false if user already does exist' do
-			response = db.insert_user('admin','admin', 100, 'GBP')
+			response = db.insert_user('admin','admin', 'Administrator' ,100, 'GBP')
 			expect(response).to eq false
 		end
 	end
@@ -36,7 +36,7 @@ end
 RSpec.describe DatabaseQueries, '#response' do
 	context 'Given username,password, capital, concurrency' do
 		it 'should return true if user is succesfully inserted to the table' do
-			response = db.insert_user('John','123pasw', 100, 'GBP')
+			response = db.insert_user('John','123pasw', 'John', 100, 'GBP')
 			db.delete_user('John','123pasw')
 			expect(response).to eq true
 		end
