@@ -1,5 +1,6 @@
 require 'pg'
 require_relative 'yahoo_rest'
+require 'json'
 class DatabaseQueries
   def initialize(dbname)
     @conn = PG.connect(dbname: dbname)
@@ -19,7 +20,7 @@ class DatabaseQueries
       # capital is casted to float
       when 'insert_user'
         return "iu_#{tokens[1]}: #{insert_user tokens[1],
-                                               tokens[2], tokens[3], tokens[4].to_f, tokens[5]}"
+                        tokens[2], tokens[3], tokens[4].to_f, tokens[5]}"
       # TODO: this table is potentially useless
       # insert_instr symbol name
       when 'insert_instr'
@@ -28,7 +29,7 @@ class DatabaseQueries
       # price casted to float, amount to int
       when 'insert_trans'
         return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2],
-                                                tokens[3].to_f, tokens[4].to_i, tokens[5]}"
+                                   tokens[3].to_f, tokens[4].to_i, tokens[5]}"
       # get_capital user
       when 'get_capital'
         return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
@@ -50,9 +51,11 @@ class DatabaseQueries
         return "cr_#{tokens[1]}: #{get_account_currency tokens[1]}"
       when 'get_name'
         return "nm_#{tokens[1]}: #{get_name tokens[1]}"
+      when 'get_owned'
+        return "ow_#{tokens[1]}: #{(get_all_owned tokens[1]).to_json}"
       else
         return 'db: invalid action'
-    end
+      end
   end
 
   # Check whether the instrument exists in the instrument table
@@ -99,7 +102,8 @@ class DatabaseQueries
   # Deletes an user from the users database, if it exists, otherwise returns false
   def delete_user(user, psw)
     if check_user(user, psw)
-      @conn.exec("DELETE FROM users WHERE user_id = '#{user}' AND pword = '#{psw}'")
+      @conn.exec("DELETE FROM users 
+		  WHERE user_id = '#{user}' AND pword = '#{psw}'")
       return true
     end
     false
@@ -199,7 +203,8 @@ class DatabaseQueries
   # Calculate the total profit by adding up
   # the user capital and the unrealised pnl
   def get_total(user)
-    '%.3f' % (get_user_capital(user).to_f + get_unrealised_pnl(user).to_f)
+    '%.3f' % (get_initial_capital(user).to_f + get_unrealised_pnl(user).to_f + 
+		get_profit(user).to_f)
   end
 
   # Gets the initial capital of the user
@@ -209,21 +214,78 @@ class DatabaseQueries
     '%.3f' % q.getvalue(0, 0).to_f
   end
 
-  # Calculates the profit by deducting the inital investment from the total
-  def get_profit(user)
-    '%.3f' % (get_total(user).to_f - get_initial_capital(user).to_f)
+  # Get the holdings of the user
+  def get_holdings(user)
+    	bought = @conn.exec("SELECT amount, price 
+			     FROM trans 
+			     WHERE user_id = '#{user}' AND type = 't'")
+	sold = @conn.exec("SELECT amount, price
+			   FROM trans
+			   WHERE user_id = '#{user}' AND type = 'f'")
+    b = 0
+    s = 0
+    bought.each do |row|
+	b += row['amount'].to_f * row['price'].to_f
+    end
+    sold.each do |row|
+	s += row['amount'].to_f * row['price'].to_f
+    end
+    b - s
   end
 
-  # Returns the unrealised pnl of the given user 
+  # Calculates the profit by deducting the inital investment from the total
+  def get_profit_per_instr(user, instr)
+  # Step 1: get current amount of shares bought and sold by user
+  b = @conn.exec("SELECT sum(amount)
+			  FROM trans
+			  WHERE user_id = '#{user}' AND instr_id = '#{instr}'
+				AND type = 'f'")
+  # Step 2: get average price for bought shares and sold shares
+  avg = @conn.exec("SELECT (SELECT avg(price)
+			    FROM trans
+			    WHERE user_id = '#{user}' AND instr_id = '#{instr}'
+				AND type = 'f') -
+			   (SELECT COALESCE(avg(price), 0)
+			    FROM trans
+			    WHERE user_id = '#{user}' AND instr_id = '#{instr}'
+				AND type = 't')")
+  # Step 3: realised pnl = (sell price - buy price) * quantity
+  b.getvalue(0,0).to_f * avg.getvalue(0,0).to_f
+  end
+
+  def get_profit(user)
+    q = @conn.exec("SELECT DISTINCT ON (instr_id) instr_id
+		    FROM trans
+		    WHERE user_id = '#{user}'")
+    profit = 0
+    q.each do |row|
+      profit += get_profit_per_instr(user, row['instr_id'])
+    end
+    profit
+  end
+  
   def get_unrealised_pnl(user)
-    upnl = 0
+    '%.3f' % (get_current_val_per_holdings(user).to_f - get_holdings(user).to_f)
+  end
+  
+  def get_current_val_per_holdings(user)
+    cval = 0
     # To get the upnl, we go over the list of owned instruments
     # and get the yahoo price (we request the bid price)
     q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
     q.each do |row|
-      upnl += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
+      cval += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
     end
-    '%.3f' % upnl
+    '%.3f' % cval
+  end
+
+  def get_all_owned(user)
+    q = @conn.exec("SELECT instr_id, amount FROM owned WHERE user_id = '#{user}'")
+    user_owned = Array.new
+    q.each do |row|
+      user_owned.push({ :instr => row['instr_id'], :amount => row['amount']})
+    end
+    user_owned
   end
 
   # Return the sell/bid price from the Yahoo API
@@ -317,7 +379,7 @@ class DatabaseQueries
       upnl = get_unrealised_pnl(user)
       profit = get_profit(user)
       total = get_total(user)
-      user_data.push({:user => name, :upnl => upnl,
+      user_data.push({:user_id => user, :user => name, :upnl => upnl,
                       :profit => profit, :total => total})
     end
     @user_data = user_data
@@ -340,7 +402,7 @@ class DatabaseQueries
     udata.sort_by { |h| h[:total] }.reverse!
   end
 
-  def print_leaderboard(type)
+  def print_leaderboard(type, user)
     type.downcase!
     if type == 'total'
       l = total_leaderboard
@@ -351,13 +413,38 @@ class DatabaseQueries
     else
       puts "The type can be 'total', 'profit' or 'upnl'"
     end
+    fwd = get_followed_users(user)
+    l.select! do |e|
+	fwd.include?(e[:user_id]) || e[:user_id] == user
+    end
     puts " User  |  Profit  |  upnl  |  Total "
     l.each do |row|
-      puts "#{row[:user]} | #{row[:profit].round(3)} | " \
-	  "#{row[:upnl].round(3)} | #{row[:total].round(3)}"
+      puts "#{row[:user]} | #{row[:profit].to_f.round(3)} | " \
+	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
     end
     nil
   end
-
+ 
+  def get_followed_users(user)
+  q = @conn.exec("SELECT user_id FROM follow WHERE followed_by  = '#{user}'")
+  followed = Array.new
+  q.each do |row|
+    followed.push(row['user_id'])
+  end
+  followed  
+  end
+   
+  def follow(fwd, fws)
+    # Follow fee is £10 (or 10$, depending on the account)
+    return false if get_user_capital(fws) == 0
+    @conn.transaction do |con|
+      con.exec "UPDATE users 
+		SET capital = capital + 10 WHERE user_id = '#{fwd}'"
+      con.exec "UPDATE users
+		SET capital = capital - 10 WHERE user_id = '#{fwd}'"
+      con.exec "INSERT INTO follow VALUES ('#{fwd}', '#{fws}')"
+    end
+  true
+  end 
   private :update_user_capital, :clean_transactions
 end
