@@ -445,6 +445,21 @@ class DatabaseQueries
       con.exec "INSERT INTO follow VALUES ('#{fwd}', '#{fws}')"
     end
   true
+  end
+  
+  def get_f_trans(user)
+  q = @conn.exec("SELECT * from trans WHERE user_id IN
+			(SELECT user_id FROM follow
+			 WHERE followed_by = '#{user}') OR
+			user_id = '#{user}'")
+  trans = Array.new
+  q.each do |row|
+    trans.push({:user => row['user_id'], :instr => row['instr_id'],
+		:amount => row['amount'], :price => row['price'],
+		:type => row['type'], :time => row['time'],
+		:currency => row['currency']})
+  end
+  trans.sort_by { |h| h[:time] }.reverse!
   end 
   private :update_user_capital, :clean_transactions
 end
