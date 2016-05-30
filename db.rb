@@ -122,7 +122,7 @@ class DatabaseQueries
 
   # Deletes an instrument from instruments, if it exists, otherwise returns false
   def delete_instrument(instr, name)
-    if check_instr(instr, name)
+    if check_instr(instr)
       @conn.exec("DELETE FROM instruments WHERE intr_id = '#{instr}'")
       return true
     end
@@ -131,7 +131,7 @@ class DatabaseQueries
 
   # Inserts an instrument into the database if we don't already have its record
   def insert_instrument(instr, name)
-    unless check_instr(instr, name)
+    unless check_instr(instr)
       @conn.exec("INSERT INTO instruments 
 		VALUES('#{instr}', '#{name}')")
       return true
@@ -149,17 +149,18 @@ class DatabaseQueries
     curr.getvalue(0, 0).to_i
   end
 
+  
   # Perform a transaction according to its type. Updates tables accordingly
   def insert_trans(user, instr, price, amount, type)
     # type -> 't' = buy, 'f' = sell
-    u_capital = get_user_capital(user)
+    u_capital = get_user_capital(user).to_f
     value = price * amount
     curr = current_amount(user, instr)
     currency = get_se(instr)
     acc_currency = get_account_currency(user)
     # If the transaction is made in a different currency than the one we have
     # the account in, we reject it (for now)
-    return false unless currency == acc_currency
+    #return false unless currency == acc_currency
     if type == 't' && value <= u_capital
       insert_instrument(instr, get_name_instr(instr))
       @conn.transaction do |con|
@@ -179,7 +180,7 @@ class DatabaseQueries
     elsif type == 'f' && curr >= amount &&
         @conn.transaction do |con|
           con.exec "INSERT INTO trans
-		      (user_id, instr_id, price, amount, type, time)
+		      (user_id, instr_id, price, amount, type, time, currency)
      		      VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}',
 		      '#{type}', clock_timestamp(), '#{currency}')"
           con.exec "UPDATE ONLY users SET capital = #{u_capital + value}
