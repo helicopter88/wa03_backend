@@ -283,7 +283,8 @@ class DatabaseQueries
     q = @conn.exec("SELECT instr_id, amount FROM owned WHERE user_id = '#{user}'")
     user_owned = Array.new
     q.each do |row|
-      user_owned.push({ :instr => row['instr_id'], :amount => row['amount']})
+      sym = row['instr_id']
+      user_owned.push({ :instr => sym, :amount => row['amount'], :name => (@yr.request_name sym), :bp => (@yr.request_bid sym), :ap => (@yr.request_ask sym)})
     end
     user_owned
   end

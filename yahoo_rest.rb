@@ -5,20 +5,25 @@ require 'json'
 class YahooRest
   def parse_tokens(tokens)
     case tokens[0]
+    when 'req_name'
+      return "name #{jsonify(tokens[1], request_name(tokens[1]))}"
     # ask_price symbol
     when 'ask_price'
-      return "ap_#{tokens[1]}: #{yr.request_ask(tokens[1])}"
+      return "ask_price #{jsonify(tokens[1], request_ask(tokens[1]))}"
     # bid_price symbol
     when 'bid_price'
-      return "bp_#{tokens[1]}: #{yr.request_bid(tokens[1])}"
+      return "bid_price #{jsonify(tokens[1], request_bid(tokens[1]))}"
     # exists symbol
     when 'exists'
-      return "e_#{tokens[1]}: #{yr.check_existance(tokens[1])}"
+      return "exists #{jsonify(tokens[1], check_existance(tokens[1]))}"
     else
       return 'Yahoo: invalid action'
     end
   end
 
+  def jsonify(symbol, value)
+    {:sym => symbol, :res => value.strip!}.to_json
+  end
   # Some basic getters that allow us to easily fetch data from Yahoo finance
   def request_name(symbol)
     response = request(s: symbol, f: 'n')
