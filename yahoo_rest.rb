@@ -15,7 +15,7 @@ class YahooRest
       return "bid_price #{jsonify(tokens[1], request_bid(tokens[1]))}"
     # exists symbol
     when 'exists'
-      return "exists #{jsonify(tokens[1], check_existance(tokens[1]))}"
+      return "exists #{check_existance(tokens[1]).to_s}"
     else
       return 'Yahoo: invalid action'
     end
@@ -26,24 +26,19 @@ class YahooRest
   end
   # Some basic getters that allow us to easily fetch data from Yahoo finance
   def request_name(symbol)
-    response = request(s: symbol, f: 'n')
-    # puts response.to_json
-    response
+    request(s: symbol, f: 'n')
   end
 
   def request_bid(symbol)
-    response = request(s: symbol, f: 'b')
-    response
+    request(s: symbol, f: 'b')
   end
 
   def request_ask(symbol)
-    response = request(s: symbol, f: 'a')
-    response
+    request(s: symbol, f: 'a')
   end
 
   def retrieve_se(symbol)
-    response = request(s: symbol, f: 'x')
-    response
+    request(s: symbol, f: 'x')
   end
 
   def check_existance(symbol)
@@ -53,14 +48,24 @@ class YahooRest
   end
 
   private
-
-  # We do not do any sanity check for params
-  # As we hope that every method will pass us correct arguments
-  def request(params)
+  
+  # Performs the actual rest request
+  def rest_req(params) 
     # We may have to do some exception handling in case the request does not succeed
     RestClient.get('http://download.finance.yahoo.com/d/quotes.csv',
                    params: params) do |response|
       return response
     end
+  end
+  
+  # This may cache the results for up to 1 minute
+  # We do not do any sanity check for params
+  # As we hope that every method will pass us correct arguments
+  def request(params)
+    @reqs ||= Hash.new {|h, key| h[key] = { :res => rest_req(params), :time => Time.new.to_i } }
+    if Time.new.to_i - @reqs[params][:time] > 60
+      @reqs[params] = { :res => rest_req(params), :time => Time.new.to_i }
+    end
+    @reqs[params][:res]
   end
 end
