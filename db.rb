@@ -5,6 +5,7 @@ class DatabaseQueries
   def initialize(dbname)
     @conn = PG.connect(dbname: dbname)
     @yr = YahooRest.new
+    @user_data = user_data
   end
 
   def parse_tokens(tokens)
@@ -53,6 +54,8 @@ class DatabaseQueries
         return "nm_#{tokens[1]}: #{get_name tokens[1]}"
       when 'get_owned'
         return "ow_#{tokens[1]}: #{(get_all_owned tokens[1]).to_json}"
+      when 'get_rank'
+        return "rk_#{tokens[1]}: #{get_rank tokens[1]}"
       else
         return 'db: invalid action'
       end
@@ -158,6 +161,7 @@ class DatabaseQueries
     curr = current_amount(user, instr)
     currency = get_se(instr)
     acc_currency = get_account_currency(user)
+    return false if amount == 0
     # If the transaction is made in a different currency than the one we have
     # the account in, we reject it (for now)
     #return false unless currency == acc_currency
@@ -404,7 +408,7 @@ class DatabaseQueries
     udata.sort_by { |h| h[:total] }.reverse!
   end
 
-  def print_leaderboard(type, user)
+  def leaderboard(type, user)
     type.downcase!
     if type == 'total'
       l = total_leaderboard
@@ -419,14 +423,18 @@ class DatabaseQueries
     l.select! do |e|
 	fwd.include?(e[:user_id]) || e[:user_id] == user
     end
+    l
+  end
+
+  def print_leaderboard(type, user)
+    l = leaderboard(type, user)
     puts " User  |  Profit  |  upnl  |  Total "
     l.each do |row|
       puts "#{row[:user]} | #{row[:profit].to_f.round(3)} | " \
-	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
+    	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
     end
-    nil
   end
- 
+     
   def get_followed_users(user)
   q = @conn.exec("SELECT user_id FROM follow WHERE followed_by  = '#{user}'")
   followed = Array.new
@@ -462,6 +470,12 @@ class DatabaseQueries
 		:currency => row['currency']})
   end
   trans.sort_by { |h| h[:time] }.reverse!
-  end 
+  end
+
+  def get_rank(user)
+  q = leaderboard('profit', user)
+  q.index { |h| h[:user_id] == user } + 1
+  end
+ 
   private :update_user_capital, :clean_transactions
 end
