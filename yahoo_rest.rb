@@ -3,6 +3,12 @@ require 'rest-client'
 require 'json'
 
 class YahooRest
+  def initialize
+   @names = Hash.new
+   @bids = Hash.new
+   @asks = Hash.new
+  end
+
   def parse_tokens(tokens)
     case tokens[0]
     when 'req_name'
@@ -24,17 +30,33 @@ class YahooRest
   def jsonify(symbol, value)
     {:sym => symbol, :res => value.strip!}.to_json
   end
+
   # Some basic getters that allow us to easily fetch data from Yahoo finance
   def request_name(symbol)
-    request(s: symbol, f: 'n')
+    params = {s: symbol, f: 'n'}
+    @names[symbol] ||= {:res => request(params), :time => Time.new.to_i}
+    if Time.new.to_i - @names[symbol][:time] > 60
+      @names[symbol] = {:res => request(params), :time => Time.new.to_i}
+    end
+    @names[symbol][:res]
   end
 
   def request_bid(symbol)
-    request(s: symbol, f: 'b')
+    params = {s: symbol, f: 'b'}
+    @bids[symbol] ||= {:res => request(params), :time => Time.new.to_i}
+    if Time.new.to_i - @bids[symbol][:time] > 60
+      @bids[symbol] = {:res => request(params), :time => Time.new.to_i}
+    end
+    @bids[symbol][:res] 
   end
 
   def request_ask(symbol)
-    request(s: symbol, f: 'a')
+    params = {s: symbol, f: 'a'}
+    @asks[symbol] ||= {:res => request(params), :time => Time.new.to_i}
+    if Time.new.to_i - @asks[symbol][:time] > 60
+      @asks[symbol] = {:res => request(params), :time => Time.new.to_i}
+    end
+    @asks[symbol][:res]
   end
 
   def retrieve_se(symbol)
@@ -42,7 +64,7 @@ class YahooRest
   end
 
   def check_existance(symbol)
-    response = request(s: symbol, f: 'n')
+    response = request_name(symbol)
     # Yahoo Finance returns "N/A" when the symbol does not match anything found
     !(response.eql? "N/A\n")
   end
@@ -62,10 +84,6 @@ class YahooRest
   # We do not do any sanity check for params
   # As we hope that every method will pass us correct arguments
   def request(params)
-    @reqs ||= Hash.new {|h, key| h[key] = { :res => rest_req(params), :time => Time.new.to_i } }
-    if Time.new.to_i - @reqs[params][:time] > 60
-      @reqs[params] = { :res => rest_req(params), :time => Time.new.to_i }
-    end
-    @reqs[params][:res]
+    rest_req(params)
   end
 end
