@@ -10,21 +10,9 @@ class YahooRest
   end
 
   def parse_tokens(tokens)
-    case tokens[0]
-    when 'req_name'
-      return "name #{jsonify(tokens[1], request_name(tokens[1]))}"
-    # ask_price symbol
-    when 'ask_price'
-      return "ask_price #{jsonify(tokens[1], request_ask(tokens[1]))}"
-    # bid_price symbol
-    when 'bid_price'
-      return "bid_price #{jsonify(tokens[1], request_bid(tokens[1]))}"
-    # exists symbol
-    when 'exists'
-      return "exists #{check_existance(tokens[1])}"
-    else
-      return 'Yahoo: invalid action'
-    end
+    action = tokens[0]
+    symbol = tokens[1]
+    "#{action}: #{jsonify(symbol, self.send(action, symbol))}"
   end
 
   def jsonify(symbol, value)
@@ -32,14 +20,14 @@ class YahooRest
   end
 
   # Some basic getters that allow us to easily fetch data from Yahoo finance
-  def request_name(symbol)
+  def req_name(symbol)
     params = { s: symbol, f: 'n' }
     # Names have no expiration date, just cache them always
     # @names[symbol] = Hash.new {|h,k| h[k] = request(params)}
     @names.fetch(symbol) { |k| @names[k] = request(params).strip! }
   end
 
-  def request_bid(symbol)
+  def bid_price(symbol)
     params = { s: symbol, f: 'b' }
     se = retrieve_se(symbol)
     if !@bids[symbol].nil? && Time.new.to_i - @bids[symbol][:time] > 60
@@ -50,7 +38,7 @@ class YahooRest
     val[:res].to_f.round(4)
   end
 
-  def request_ask(symbol)
+  def ask_price(symbol)
     params = { s: symbol, f: 'a' }
     se = retrieve_se(symbol)
     if !@asks[symbol].nil? && Time.new.to_i - @asks[symbol][:time] > 60
@@ -66,7 +54,7 @@ class YahooRest
     @ses.fetch(symbol) { |k| @ses[k] = request(params).strip! }
   end
 
-  def check_existance(symbol)
+  def exists(symbol)
     response = request_name(symbol)
     # Yahoo Finance returns "N/A" when the symbol does not match anything found
     !(response.eql? "N/A\n")
