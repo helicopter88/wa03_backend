@@ -26,11 +26,11 @@ class DatabaseQueries
       # insert_instr symbol name
     when 'insert_instr'
       return "ii_#{tokens[1]}: #{insert_instrument tokens[1], tokens[2]}"
-      # insert_trans user symbol price amount "true for buy | false for sell"
+      # insert_trans user symbol amount "true for buy | false for sell"
       # price casted to float, amount to int
     when 'insert_trans'
       return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2],
-                                              tokens[3].to_f, tokens[4].to_i, tokens[5]}"
+                                              tokens[4].to_i, tokens[5]}"
       # get_capital user
     when 'get_capital'
       return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
@@ -58,6 +58,8 @@ class DatabaseQueries
       return "rk_#{tokens[1]}: #{get_rank tokens[1]}"
     when 'get_leaderboard'
       return "lb_#{tokens[1]}: #{print_leaderboard('total', tokens[1]).to_json}"
+    when 'get_all_trans'
+      return "tr_#{tokens[1]}: #{get_all_trans tokens[1]}"
     else
       return 'db: invalid action'
       end
@@ -154,56 +156,93 @@ class DatabaseQueries
     curr.getvalue(0, 0).to_i
   end
 
+  def buy(user, instr, amount, curr_amount, currency)
+    price = @yr.request_ask(instr)
+    puts price
+    return -7 if price < 0
+    return -5 if price == 0
+    u_capital = get_user_capital(user).to_f
+    value = price * amount
+    return -2 if u_capital < value
+    @conn.transaction do |con|
+      con.exec "UPDATE users
+		      SET capital = #{u_capital - value}
+		      WHERE user_id = '#{user}'"
+      con.exec "INSERT INTO trans
+		      (user_id, instr_id, price, amount, type, time, currency)
+    		      VALUES ('#{user}', '#{instr}','#{price}','#{amount}',
+		      't', clock_timestamp(), '#{currency}')"
+      con.exec "INSERT INTO owned VALUES
+		      ('#{user}', '#{instr}', '#{amount}', '#{currency}')
+    		      ON CONFLICT (user_id, instr_id)
+		      DO UPDATE SET amount = #{curr_amount + amount}"
+    end
+    update_avg(user, instr)
+    "You just bought #{amount} share(s) of #{instr} (#{price} per share) for a" \
+    " total of #{value} #{currency}."
+  end
+
+  def sell(user, instr, amount, curr_amount, currency)
+    price = @yr.request_bid(instr)
+    return -7 if price <= 0
+    u_capital = get_user_capital(user).to_f
+    value = price * amount
+    @conn.transaction do |con|
+      con.exec "INSERT INTO trans
+     (user_id, instr_id, price, amount, type, time, currency)
+  		      VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}',
+     'f', clock_timestamp(), '#{currency}')"
+      con.exec "UPDATE ONLY users SET capital = #{u_capital + value}
+		      WHERE user_id = '#{user}'"
+      con.exec "UPDATE ONLY owned SET amount = #{curr_amount - amount}
+		      WHERE user_id = '#{user}' AND instr_id = '#{instr}'"
+      con.exec 'DELETE FROM ONLY owned WHERE amount = 0'
+    end
+    "You just sold #{amount} share(s) of #{instr} (#{price} per share) for a" \
+    " total of #{value} #{currency}."
+  end
+
   # Perform a transaction according to its type. Updates tables accordingly
   def insert_trans(user, instr, amount, type)
     # type -> 't' = buy, 'f' = sell
     # Error codes:
-    # 1 - Negative amount
-    # 2 - Negative price
-    # 3 - Different currency
-    # -1 - Either not enough money or not enough shares
-    price = type == 't' ? @yr.request_ask(instr).to_f : @yr.request_bid(instr).to_f
-    u_capital = get_user_capital(user).to_f
-    value = price * amount
+    # -6 - Negative amount
+    # -7 - Negative price
+    # -3 - Different currency
+    # -4 - Amount is zero
+    # -5 - Price is zero
+    # -1 - Not enough shares
+    # -2 - Not enough capital
+    # -8 - Any other error
     curr = current_amount(user, instr)
-    currency = get_se(instr)
-    acc_currency = get_account_currency(user)
-    return 1 if amount <= 0
-    return 2 if price <= 0
+    return -6 if amount <= 0
     # If the transaction is made in a different currency than the one we have
     # the account in, we reject it (for now)
-    return 3 unless currency == acc_currency
-    if type == 't' && value <= u_capital
+    currency = get_se(instr)
+    acc_currency = get_account_currency(user)
+    return -3 unless currency == acc_currency
+    if type == 't'
       insert_instrument(instr)
-      @conn.transaction do |con|
-        con.exec "UPDATE users
-		      SET capital = #{u_capital - value}
-		      WHERE user_id = '#{user}'"
-        con.exec "INSERT INTO trans
-		      (user_id, instr_id, price, amount, type, time, currency)
-      		      VALUES ('#{user}', '#{instr}','#{price}','#{amount}',
-		      '#{type}', clock_timestamp(), '#{currency}')"
-        con.exec "INSERT INTO owned VALUES
-		      ('#{user}', '#{instr}', '#{amount}', '#{currency}')
-      		      ON CONFLICT (user_id, instr_id)
-		      DO UPDATE SET amount = #{curr + amount}"
-      end
-      return 0
-    elsif type == 'f' && curr >= amount &&
-          @conn.transaction do |con|
-            con.exec "INSERT INTO trans
-  		      (user_id, instr_id, price, amount, type, time, currency)
-       		      VALUES ('#{user}', '#{instr}', '#{price}', '#{amount}',
-  		      '#{type}', clock_timestamp(), '#{currency}')"
-            con.exec "UPDATE ONLY users SET capital = #{u_capital + value}
-  		      WHERE user_id = '#{user}'"
-            con.exec "UPDATE ONLY owned SET amount = #{curr - amount}
-  		      WHERE user_id = '#{user}' AND instr_id = '#{instr}'"
-            con.exec 'DELETE FROM ONLY owned WHERE amount = 0'
-          end
-      return 0
+      return buy(user, instr, amount, curr, currency)
+    elsif type == 'f' && curr >= amount
+      return sell(user, instr, amount, curr, currency)
     end
-    -1
+    -8
+  end
+
+  def update_avg(user, instr)
+    q = @conn.exec("SELECT price, amount FROM trans
+		    WHERE user_id = '#{user}'
+			AND instr_id = '#{instr}'")
+    amount = 0
+    total = 0
+    q.each do |row|
+      total += row['price'].to_f * row['amount'].to_f
+      amount += row['amount'].to_f
+    end
+    avg = total/amount
+    @conn.exec("UPDATE owned SET avg = #{avg}
+	        WHERE user_id = '#{user}' AND instr_id = '#{instr}'")
   end
 
   # Get user capital if the user exists
@@ -231,10 +270,16 @@ class DatabaseQueries
   def get_holdings(user)
     bought = @conn.exec("SELECT amount, price
 			     FROM trans
-			     WHERE user_id = '#{user}' AND type = 't'")
+			     WHERE user_id = '#{user}' AND type = 't'
+			     AND instr_id IN (SELECT instr_id
+					      FROM owned
+					      WHERE user_id = '#{user}')")
     sold = @conn.exec("SELECT amount, price
   			   FROM trans
-  			   WHERE user_id = '#{user}' AND type = 'f'")
+  			   WHERE user_id = '#{user}' AND type = 'f'
+			   AND instr_id IN (SELECT instr_id
+					    FROM owned
+					    WHERE user_id = '#{user}')")
     b = 0
     s = 0
     bought.each do |row|
@@ -298,11 +343,11 @@ class DatabaseQueries
   end
 
   def get_all_owned(user)
-    q = @conn.exec("SELECT instr_id, amount FROM owned WHERE user_id = '#{user}'")
+    q = @conn.exec("SELECT instr_id, amount, avg FROM owned WHERE user_id = '#{user}'")
     user_owned = []
     q.each do |row|
       sym = row['instr_id']
-      user_owned.push(instr: sym, amount: row['amount'], name: (@yr.request_name sym), bp: (@yr.request_bid sym), ap: (@yr.request_ask sym))
+      user_owned.push(instr: sym, amount: row['amount'],  name: (@yr.request_name sym), bp: (@yr.request_bid sym), ap: (@yr.request_ask sym), avg: row['avg'])
     end
     user_owned
   end
@@ -322,6 +367,17 @@ class DatabaseQueries
     @yr.request_name(symbol).strip![1..-2].to_s
   end
 
+  def get_all_trans(user)
+  q = @conn.exec("SELECT * FROM trans WHERE user_id = '#{user}' ORDER BY time DESC")
+  t = Array.new
+  q.each do |row|
+    t.push({:user_id => row['user_id'], :instr_id => row['instr_id'],
+	    :price => row['price'], :amount => row['amount'], :type => row['type'],
+	    :time => row['time'], :currency => row['currency']})
+  end
+  t.to_json
+  end 
+
   # Currently prints all the buys of a given user
   # TODO: make an array and return as JSON file
   def get_buy_trans(user)
@@ -330,13 +386,10 @@ class DatabaseQueries
 		   WHERE user_id = '#{user}'
 		     AND type = 't'")
 
-    buy_arr = []
-    puts "'USER' 'INSTR' 'AMOUNT' 'PRICE' 'TIME' 'CURRENCY'"
-    q.each do |row|
-      # buy_arr.push({:user => row['user_id']
-      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
-                                       row['amount'], row['price'], row['time'], row['currency']])
-    end
+    #q.each do |row|
+    #  puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
+     #                                  row['amount'], row['price'], row['time'], row['currency']])
+    #end
   end
 
   # Currently prints all the sells of a given user
@@ -346,21 +399,21 @@ class DatabaseQueries
 		   FROM trans
 		   WHERE user_id = '#{user}'
 		     AND type = 'f'")
-    puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
-    q.each do |row|
-      puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
-                                       row['amount'], row['price'], row['time'], row['currency']])
-    end
+    #puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
+    #q.each do |row|
+    #  puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
+    #                                   row['amount'], row['price'], row['time'], row['currency']])
+   # end
   end
 
   # Prints the current open positions of the given user
   def get_current_instr(user)
     q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
-    puts "'USER' 'INSTR' 'AMOUNT', 'CURRENCY'"
-    q.each do |row|
-      puts '%s %s %d %s'.format([row['user_id'], row['instr_id'],
-                                 row['amount'], row['currency']])
-    end
+    #puts "'USER' 'INSTR' 'AMOUNT', 'CURRENCY'"
+    #q.each do |row|
+    #  puts '%s %s %d %s'.format([row['user_id'], row['instr_id'],
+    #                             row['amount'], row['currency']])
+    #end
   end
 
   # Updates the user capital with the new given capital
@@ -379,7 +432,6 @@ class DatabaseQueries
     # default is GBP
     c = 'GBP'
     se = @yr.retrieve_se(instr)
-    puts se
     c = 'USD' if se.include?('NMS') || se.include?('NYQ')
     c
   end
@@ -440,11 +492,11 @@ class DatabaseQueries
 
   def print_leaderboard(type, user)
     l = leaderboard(type, user)
-    puts ' User  |  Profit  |  upnl  |  Total '
-    l.each do |row|
-      puts "#{row[:user]} | #{row[:profit].to_f.round(3)} | " \
-    	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
-    end
+    #puts ' User  |  Profit  |  upnl  |  Total '
+    #l.each do |row|
+    #  puts "#{row[:user]} | #{row[:profit].to_f.round(3)} | " \
+   # 	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
+   # end
   end
 
   def get_followed_users(user)

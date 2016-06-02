@@ -28,7 +28,7 @@ class YahooRest
   end
 
   def jsonify(symbol, value)
-    { sym: symbol, res: value.strip! }.to_json
+    { sym: symbol, res: value }.to_json
   end
 
   # Some basic getters that allow us to easily fetch data from Yahoo finance
@@ -36,30 +36,34 @@ class YahooRest
     params = { s: symbol, f: 'n' }
     # Names have no expiration date, just cache them always
     # @names[symbol] = Hash.new {|h,k| h[k] = request(params)}
-    @names.fetch(symbol) { |k| @names[k] = request(params) }
+    @names.fetch(symbol) { |k| @names[k] = request(params).strip! }
   end
 
   def request_bid(symbol)
     params = { s: symbol, f: 'b' }
-    @bids[symbol] ||= { res: request(params), time: Time.new.to_i }
-    if Time.new.to_i - @bids[symbol][:time] > 60
-      @bids[symbol] = { res: request(params), time: Time.new.to_i }
+    se = retrieve_se(symbol)
+    if !@bids[symbol].nil? && Time.new.to_i - @bids[symbol][:time] > 60
+      @bids.delete(symbol)
     end
-    @bids[symbol][:res]
+    val = @bids.fetch(symbol) { |k| @bids[k] = { res: request(params), time: Time.new.to_i } }
+    return (val[:res].to_f / 100).round(4) if se.include? 'LSE'
+    val[:res].to_f.round(4)
   end
 
   def request_ask(symbol)
     params = { s: symbol, f: 'a' }
-    @asks[symbol] ||= { res: request(params), time: Time.new.to_i }
-    if Time.new.to_i - @asks[symbol][:time] > 60
-      @asks[symbol] = { res: request(params), time: Time.new.to_i }
+    se = retrieve_se(symbol)
+    if !@asks[symbol].nil? && Time.new.to_i - @asks[symbol][:time] > 60
+      @asks.delete(symbol)
     end
-    @asks[symbol][:res]
+    val = @asks.fetch(symbol) { |k| @asks[k] = { res: request(params), time: Time.new.to_i } }
+    return (val[:res].to_f / 100).round(4) if se.include? 'LSE'
+    val[:res].to_f.round(4)
   end
 
   def retrieve_se(symbol)
     params = { s: symbol, f: 'x' }
-    @ses.fetch(symbol) { |k| @ses[k] = request(params) }
+    @ses.fetch(symbol) { |k| @ses[k] = request(params).strip! }
   end
 
   def check_existance(symbol)
