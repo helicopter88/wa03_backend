@@ -9,60 +9,9 @@ class DatabaseQueries
   end
 
   def parse_tokens(tokens)
-    case tokens[0]
-      # TODO: potentially useless
-      # check_instr symbol
-    when 'check_instr'
-      return "ci_#{tokens[1]}: #{check_instr tokens[1]}"
-      # login user password
-    when 'login'
-      return "lg_#{tokens[1]}: #{check_user tokens[1], tokens[2]}"
-      # insert_user username password name capital currency
-      # capital is casted to float
-    when 'insert_user'
-      return "iu_#{tokens[1]}: #{insert_user tokens[1],
-                                             tokens[2], tokens[3], tokens[4].to_f, tokens[5]}"
-      # TODO: this table is potentially useless
-      # insert_instr symbol name
-    when 'insert_instr'
-      return "ii_#{tokens[1]}: #{insert_instrument tokens[1], tokens[2]}"
-      # insert_trans user symbol amount "true for buy | false for sell"
-      # price casted to float, amount to int
-    when 'insert_trans'
-      return "it_#{tokens[1]}: #{insert_trans tokens[1], tokens[2],
-                                              tokens[4].to_i, tokens[5]}"
-      # get_capital user
-    when 'get_capital'
-      return "gc_#{tokens[1]}: #{get_user_capital tokens[1]}"
-      # get_buy_trans user
-    when 'get_buy_trans'
-      return "gb_#{tokens[1]}: #{get_buy_trans tokens[1]}"
-      # update_user_cap user newcapital
-      # newcapital casted to float
-    when 'update_user_cap'
-      return "uc_#{tokens[1]}: #{update_user_capital tokens[1], tokens[2].to_f}"
-      # get_total user
-    when 'get_total'
-      return "tt_#{tokens[1]}: #{get_total tokens[1]}"
-    when 'get_profit'
-      return "tp_#{tokens[1]}: #{get_profit tokens[1]}"
-    when 'get_upnl'
-      return "pl_#{tokens[1]}: #{get_unrealised_pnl tokens[1]}"
-    when 'get_currency'
-      return "cr_#{tokens[1]}: #{get_account_currency tokens[1]}"
-    when 'get_name'
-      return "nm_#{tokens[1]}: #{get_name tokens[1]}"
-    when 'get_owned'
-      return "ow_#{tokens[1]}: #{(get_all_owned tokens[1]).to_json}"
-    when 'get_rank'
-      return "rk_#{tokens[1]}: #{get_rank tokens[1]}"
-    when 'get_leaderboard'
-      return "lb_#{tokens[1]}: #{print_leaderboard('total', tokens[1]).to_json}"
-    when 'get_all_trans'
-      return "tr_#{tokens[1]}: #{get_all_trans tokens[1]}"
-    else
-      return 'db: invalid action'
-      end
+    action = tokens[0]
+    args = tokens[1..tokens.length]
+    "#{action}: #{send(action, *args)}"
   end
 
   # Check whether the instrument exists in the instrument table
@@ -84,7 +33,7 @@ class DatabaseQueries
   end
 
   # Check whether the given user exists in the database
-  def check_user(user, psw)
+  def login(user, psw)
     @conn.exec("SELECT *
 		FROM users
 		WHERE user_id = '#{user}'
@@ -100,7 +49,7 @@ class DatabaseQueries
     q.getvalue(0, 5).to_s
   end
 
-  def get_account_currency(user)
+  def get_currency(user)
     q = @conn.exec("SELECT currency FROM users WHERE user_id = '#{user}'")
     return nil if q.ntuples == 0
     q.getvalue(0, 0).to_s
@@ -108,7 +57,7 @@ class DatabaseQueries
 
   # Deletes an user from the users database, if it exists, otherwise returns false
   def delete_user(user, psw)
-    if check_user(user, psw)
+    if login(user, psw)
       @conn.exec("DELETE FROM users
 		  WHERE user_id = '#{user}' AND pword = '#{psw}'")
       return true
@@ -118,7 +67,7 @@ class DatabaseQueries
 
   # Inserts a user into the database if we don't already have their record otherwise returns false
   def insert_user(user, psw, name, capital, currency)
-    unless check_user(user, psw)
+    unless login(user, psw)
       @conn.exec("INSERT INTO users
 		VALUES('#{user}', '#{psw}', '#{capital}',
 		 '#{capital}', '#{currency}', '#{name}')")
@@ -137,7 +86,7 @@ class DatabaseQueries
   end
 
   # Inserts an instrument into the database if we don't already have its record
-  def insert_instrument(instr)
+  def insert_instr(instr)
     unless check_instr(instr)
       @conn.exec("INSERT INTO instruments
 		VALUES('#{instr}', 'None')")
@@ -157,11 +106,11 @@ class DatabaseQueries
   end
 
   def buy(user, instr, amount, curr_amount, currency)
-    price = @yr.request_ask(instr)
+    price = @yr.ask_price(instr)
     puts price
     return -7 if price < 0
     return -5 if price == 0
-    u_capital = get_user_capital(user).to_f
+    u_capital = get_capital(user).to_f
     value = price * amount
     return -2 if u_capital < value
     @conn.transaction do |con|
@@ -183,9 +132,9 @@ class DatabaseQueries
   end
 
   def sell(user, instr, amount, curr_amount, currency)
-    price = @yr.request_bid(instr)
+    price = @yr.bid_price(instr)
     return -7 if price <= 0
-    u_capital = get_user_capital(user).to_f
+    u_capital = get_capital(user).to_f
     value = price * amount
     @conn.transaction do |con|
       con.exec "INSERT INTO trans
@@ -215,14 +164,15 @@ class DatabaseQueries
     # -2 - Not enough capital
     # -8 - Any other error
     curr = current_amount(user, instr)
+    amount = amount.to_i
     return -6 if amount <= 0
     # If the transaction is made in a different currency than the one we have
     # the account in, we reject it (for now)
     currency = get_se(instr)
-    acc_currency = get_account_currency(user)
+    acc_currency = get_currency(user)
     return -3 unless currency == acc_currency
     if type == 't'
-      insert_instrument(instr)
+      insert_instr(instr)
       return buy(user, instr, amount, curr, currency)
     elsif type == 'f' && curr >= amount
       return sell(user, instr, amount, curr, currency)
@@ -240,13 +190,13 @@ class DatabaseQueries
       total += row['price'].to_f * row['amount'].to_f
       amount += row['amount'].to_f
     end
-    avg = total/amount
+    avg = total / amount
     @conn.exec("UPDATE owned SET avg = #{avg}
 	        WHERE user_id = '#{user}' AND instr_id = '#{instr}'")
   end
 
   # Get user capital if the user exists
-  def get_user_capital(user)
+  def get_capital(user)
     q = @conn.exec("SELECT capital FROM users WHERE user_id = '#{user}'")
     return 0 if q.ntuples == 0
     '%.3f' % q.getvalue(0, 0).to_f
@@ -255,7 +205,7 @@ class DatabaseQueries
   # Calculate the total profit by adding up
   # the user capital and the unrealised pnl
   def get_total(user)
-    '%.3f' % (get_initial_capital(user).to_f + get_unrealised_pnl(user).to_f +
+    '%.3f' % (get_initial_capital(user).to_f + get_upnl(user).to_f +
     get_profit(user).to_f)
   end
 
@@ -327,7 +277,7 @@ class DatabaseQueries
     profit
   end
 
-  def get_unrealised_pnl(user)
+  def get_upnl(user)
     '%.3f' % (get_current_val_per_holdings(user).to_f - get_holdings(user).to_f)
   end
 
@@ -337,46 +287,46 @@ class DatabaseQueries
     # and get the yahoo price (we request the bid price)
     q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
     q.each do |row|
-      cval += @yr.request_bid(row['instr_id']).to_f * row['amount'].to_i
+      cval += @yr.bid_price(row['instr_id']).to_f * row['amount'].to_i
     end
     '%.3f' % cval
   end
 
-  def get_all_owned(user)
+  def get_owned(user)
     q = @conn.exec("SELECT instr_id, amount, avg FROM owned WHERE user_id = '#{user}'")
     user_owned = []
     q.each do |row|
       sym = row['instr_id']
-      user_owned.push(instr: sym, amount: row['amount'],  name: (@yr.request_name sym), bp: (@yr.request_bid sym), ap: (@yr.request_ask sym), avg: row['avg'])
+      user_owned.push(instr: sym, amount: row['amount'], name: (@yr.req_name sym), bp: (@yr.bid_price sym), ap: (@yr.ask_price sym), avg: row['avg'])
     end
-    user_owned
+    user_owned.to_json
   end
 
   # Return the sell/bid price from the Yahoo API
   def get_sell_price(symbol)
-    @yr.request_bid(symbol)
+    @yr.bid_price(symbol)
   end
 
   # Return the buy/ask price from the Yahoo API
   def get_buy_price(symbol)
-    @yr.request_ask(symbol)
+    @yr.ask_price(symbol)
   end
 
   # Get the official name of the instrument from the Yahoo API
   def get_name_instr(symbol)
-    @yr.request_name(symbol).strip![1..-2].to_s
+    @yr.req_name(symbol).strip![1..-2].to_s
   end
 
   def get_all_trans(user)
-  q = @conn.exec("SELECT * FROM trans WHERE user_id = '#{user}' ORDER BY time DESC")
-  t = Array.new
-  q.each do |row|
-    t.push({:user_id => row['user_id'], :instr_id => row['instr_id'],
-	    :price => row['price'], :amount => row['amount'], :type => row['type'],
-	    :time => row['time'], :currency => row['currency']})
+    q = @conn.exec("SELECT * FROM trans WHERE user_id = '#{user}' ORDER BY time DESC")
+    t = []
+    q.each do |row|
+      t.push(user_id: row['user_id'], instr_id: row['instr_id'],
+             price: row['price'], amount: row['amount'], type: row['type'],
+             time: row['time'], currency: row['currency'])
+    end
+    t.to_json
   end
-  t.to_json
-  end 
 
   # Currently prints all the buys of a given user
   # TODO: make an array and return as JSON file
@@ -386,10 +336,10 @@ class DatabaseQueries
 		   WHERE user_id = '#{user}'
 		     AND type = 't'")
 
-    #q.each do |row|
+    # q.each do |row|
     #  puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
-     #                                  row['amount'], row['price'], row['time'], row['currency']])
-    #end
+    #                                  row['amount'], row['price'], row['time'], row['currency']])
+    # end
   end
 
   # Currently prints all the sells of a given user
@@ -399,25 +349,25 @@ class DatabaseQueries
 		   FROM trans
 		   WHERE user_id = '#{user}'
 		     AND type = 'f'")
-    #puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
-    #q.each do |row|
+    # puts "'USER' 'INSTR' 'AMOUNT' 'PRICE', 'TIME', 'CURRENCY'"
+    # q.each do |row|
     #  puts '%s %s %d %f %s %s'.format([row['user_id'], row['instr_id'],
     #                                   row['amount'], row['price'], row['time'], row['currency']])
-   # end
+    # end
   end
 
   # Prints the current open positions of the given user
   def get_current_instr(user)
     q = @conn.exec("SELECT * FROM owned WHERE user_id = '#{user}'")
-    #puts "'USER' 'INSTR' 'AMOUNT', 'CURRENCY'"
-    #q.each do |row|
+    # puts "'USER' 'INSTR' 'AMOUNT', 'CURRENCY'"
+    # q.each do |row|
     #  puts '%s %s %d %s'.format([row['user_id'], row['instr_id'],
     #                             row['amount'], row['currency']])
-    #end
+    # end
   end
 
   # Updates the user capital with the new given capital
-  def update_user_capital(user, capital)
+  def update_user_cap(user, capital)
     @conn.exec("UPDATE users SET capital = '#{capital}' WHERE user_id = '#{user}'")
   end
 
@@ -446,7 +396,7 @@ class DatabaseQueries
     q.each do |row|
       name = row['name']
       user = row['user_id']
-      upnl = get_unrealised_pnl(user)
+      upnl = get_upnl(user)
       profit = get_profit(user)
       total = get_total(user)
       user_data.push(user_id: user, user: name, upnl: upnl,
@@ -490,13 +440,13 @@ class DatabaseQueries
     l
   end
 
-  def print_leaderboard(type, user)
-    l = leaderboard(type, user)
-    #puts ' User  |  Profit  |  upnl  |  Total '
-    #l.each do |row|
+  def get_leaderboard(type, user)
+    l = leaderboard(type, user).to_json
+    # puts ' User  |  Profit  |  upnl  |  Total '
+    # l.each do |row|
     #  puts "#{row[:user]} | #{row[:profit].to_f.round(3)} | " \
-   # 	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
-   # end
+    # 	  "#{row[:upnl].to_f.round(3)} | #{row[:total].to_f.round(3)}"
+    # end
   end
 
   def get_followed_users(user)
@@ -510,7 +460,7 @@ class DatabaseQueries
 
   def follow(fwd, fws)
     # Follow fee is £10 (or 10$, depending on the account)
-    return false if get_user_capital(fws) == 0
+    return false if get_capital(fws) == 0
     @conn.transaction do |con|
       con.exec "UPDATE users
 		SET capital = capital + 10 WHERE user_id = '#{fwd}'"
@@ -544,5 +494,5 @@ class DatabaseQueries
     q.size - p
   end
 
-  private :update_user_capital, :clean_transactions
+  private :update_user_cap, :clean_transactions
 end
