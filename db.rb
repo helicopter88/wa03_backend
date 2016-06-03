@@ -458,6 +458,7 @@ class DatabaseQueries
     followed
   end
 
+  #TODO: good naming bro
   def follow(fwd, fws)
     # Follow fee is £10 (or 10$, depending on the account)
     return false if get_capital(fws) == 0
