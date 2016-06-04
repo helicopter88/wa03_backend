@@ -2,10 +2,21 @@ require 'pg'
 require_relative 'yahoo_rest'
 require 'json'
 class DatabaseQueries
+  def method_missing(_m, *args)
+    "Invalid method"
+  end
+  
   def initialize(dbname)
+    @users = []
     @conn = PG.connect(dbname: dbname)
     @yr = YahooRest.new
     @user_data = user_data
+  end
+  
+  def user_exists(user)
+    return @users.include? user unless @users.empty?
+    fetch_all_users
+    @users.include? user
   end
 
   def parse_tokens(tokens)
@@ -40,6 +51,24 @@ class DatabaseQueries
 		  AND pword = '#{psw}'").ntuples == 1
   end
 
+  def fetch_all_users
+    if @users.empty? 
+      q = @conn.exec('SELECT user_id FROM users')
+      q.each do |row|
+      @users << row['user_id']
+      end
+    end
+  end
+  
+  
+  def get_followable_users(username)
+    fetch_all_users
+    followed = get_followed_users(username) 
+    puts followed
+    tmp = @users.select { |user| ((user != username) && !followed.include?(user)) }
+    tmp.to_json
+  end
+
   # Get the name of the given user
   def get_name(user)
     q = @conn.exec("SELECT *
@@ -57,9 +86,9 @@ class DatabaseQueries
 
   # Deletes an user from the users database, if it exists, otherwise returns false
   def delete_user(user, psw)
-    if login(user, psw)
+    if users_exists(user)
       @conn.exec("DELETE FROM users
-		  WHERE user_id = '#{user}' AND pword = '#{psw}'")
+		  WHERE user_id = '#{user}'")
       return true
     end
     false
@@ -67,10 +96,11 @@ class DatabaseQueries
 
   # Inserts a user into the database if we don't already have their record otherwise returns false
   def insert_user(user, psw, name, capital, currency)
-    unless login(user, psw)
+    unless user_exists(user)
       @conn.exec("INSERT INTO users
 		VALUES('#{user}', '#{psw}', '#{capital}',
 		 '#{capital}', '#{currency}', '#{name}')")
+      @users = []
       return true
     end
     false
@@ -458,10 +488,10 @@ class DatabaseQueries
     followed
   end
 
-  #TODO: good naming bro
+  # TODO: good naming bro
   def follow(fwd, fws)
     # Follow fee is £10 (or 10$, depending on the account)
-    return false if get_capital(fws) == 0
+    return false if get_capital(fws).to_f <= 0
     @conn.transaction do |con|
       con.exec "UPDATE users
 		SET capital = capital + 10 WHERE user_id = '#{fwd}'"

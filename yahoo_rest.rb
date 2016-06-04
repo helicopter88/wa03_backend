@@ -57,7 +57,7 @@ class YahooRest
   def fetch_cached_data(h, symbol, params)
     h.fetch(symbol) { |k| h[k] = request(params).strip! }
   end
-  
+
   def get_price(h, symbol, params)
     se = retrieve_se(symbol)
     h.delete(symbol) if h[symbol] && Time.new.to_i - h[symbol][:time] > 60
