@@ -3,11 +3,13 @@ require 'socket'
 require_relative 'yahoo_rest'
 require_relative 'db'
 require 'em-websocket'
+require_relative 'news'
 
 hostname = Socket.gethostname.strip
 puts "Webserver is being hosted on #{hostname}"
 yr = YahooRest.new
 db = DatabaseQueries.new 'summitdb'
+news = News.new
 EM.run do
   # for now use localhost, this will be changed later
   EM::WebSocket.run(host: '0.0.0.0', port: 8080) do |ws|
@@ -28,6 +30,8 @@ EM.run do
         ws.send yr.parse_tokens(tokens)
       when 'db'
         ws.send db.parse_tokens(tokens)
+      when 'news'
+        ws.send news.parse_tokens(tokens) 
       else
         ws.send "Invalid Message: #{msg}"
       end
