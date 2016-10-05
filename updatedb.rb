@@ -8,7 +8,7 @@ class UpdatePrices
   end
 
   def update
-    y = @conn.exec('SELECT instr_id FROM instruments')
+    y = @conn.exec('SELECT instr_id FROM instrumnts')
     y.each do |row|
       updateOne(row['instr_id'])
     end
